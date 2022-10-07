@@ -8,17 +8,17 @@
 #define LED_PORT              GPIOC
 #define LED_PIN               GPIO_Pin_13
 
-#define CAN1_ReMap // Закоментировать, если нет ремапинга портов
+#define CAN1_ReMap // РўСѓС‚ СЃРѕРєСЂС‹С‚С‹ РєРѕРјРјРµРЅС‚С‹ РЅР° СЂР°С€Р° language 
 #ifndef CAN1_ReMap
     #define CAN1_GPIO_PORT        GPIOA
-    #define CAN1_RX_SOURCE        GPIO_Pin_11              // RX-порт
-    #define CAN1_TX_SOURCE        GPIO_Pin_12              // TX-порт
-    #define CAN1_Periph        RCC_APB2Periph_GPIOA        // Порт перифирии
+    #define CAN1_RX_SOURCE        GPIO_Pin_11              // RX-ГЇГ®Г°ГІ
+    #define CAN1_TX_SOURCE        GPIO_Pin_12              // TX-ГЇГ®Г°ГІ
+    #define CAN1_Periph        RCC_APB2Periph_GPIOA        // ГЏГ®Г°ГІ ГЇГҐГ°ГЁГґГЁГ°ГЁГЁ
 #else
     #define CAN1_GPIO_PORT        GPIOB
-    #define CAN1_RX_SOURCE        GPIO_Pin_8               // RX-порт
-    #define CAN1_TX_SOURCE        GPIO_Pin_9               // TX-порт
-    #define CAN1_Periph        RCC_APB2Periph_GPIOB        // Порт перифирии
+    #define CAN1_RX_SOURCE        GPIO_Pin_8               // RX-ГЇГ®Г°ГІ
+    #define CAN1_TX_SOURCE        GPIO_Pin_9               // TX-ГЇГ®Г°ГІ
+    #define CAN1_Periph        RCC_APB2Periph_GPIOB        // ГЏГ®Г°ГІ ГЇГҐГ°ГЁГґГЁГ°ГЁГЁ
 #endif
 
 //#define Mode                   CAN_Mode_Silent_LoopBack
@@ -34,7 +34,7 @@ uint8_t dataread[dtread];
 uint16_t serial_tx_buffer_tail;
 uint16_t serial_tx_buffer_head;
 uint8_t readcount;
-uint8_t FLAG;                       //1-есть пакет пакет
+uint8_t FLAG;                       //1-ГҐГ±ГІГј ГЇГ ГЄГҐГІ ГЇГ ГЄГҐГІ
                                     //2-interface_state
                                     //4-listen only
                                     //8-time stamp
@@ -61,8 +61,8 @@ void statLED(uint8_t a){
   if (a==0) GPIO_SetBits(LED_PORT,LED_PIN);}
 
 void initUART(){
-    GPIO_InitTypeDef PORT;    //Структура содержащая настройки порта
-    USART_InitTypeDef USART;  //Структура содержащая настройки USART
+    GPIO_InitTypeDef PORT;    //Г‘ГІГ°ГіГЄГІГіГ°Г  Г±Г®Г¤ГҐГ°Г¦Г Г№Г Гї Г­Г Г±ГІГ°Г®Г©ГЄГЁ ГЇГ®Г°ГІГ 
+    USART_InitTypeDef USART;  //Г‘ГІГ°ГіГЄГІГіГ°Г  Г±Г®Г¤ГҐГ°Г¦Г Г№Г Гї Г­Г Г±ГІГ°Г®Г©ГЄГЁ USART
     NVIC_InitTypeDef NVIC_InitStructure;
 	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
 	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
@@ -84,18 +84,18 @@ void initUART(){
     PORT.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOA, &PORT);
 
-    //Настройка USART
+    //ГЌГ Г±ГІГ°Г®Г©ГЄГ  USART
     USART_StructInit(&USART);
-    USART.USART_BaudRate = 115200;   //Скорость обмена
-    USART.USART_WordLength = USART_WordLength_8b; //Длина слова 8 бит
-    USART.USART_StopBits = USART_StopBits_1; //1 стоп-бит
-    USART.USART_Parity = USART_Parity_No ; //Без проверки четности
-    USART.USART_HardwareFlowControl = USART_HardwareFlowControl_None; //Без аппаратного контроля
-    USART.USART_Mode = USART_Mode_Rx | USART_Mode_Tx; //Включен передатчик и приемник USART
+    USART.USART_BaudRate = 115200;   //Г‘ГЄГ®Г°Г®Г±ГІГј Г®ГЎГ¬ГҐГ­Г 
+    USART.USART_WordLength = USART_WordLength_8b; //Г„Г«ГЁГ­Г  Г±Г«Г®ГўГ  8 ГЎГЁГІ
+    USART.USART_StopBits = USART_StopBits_1; //1 Г±ГІГ®ГЇ-ГЎГЁГІ
+    USART.USART_Parity = USART_Parity_No ; //ГЃГҐГ§ ГЇГ°Г®ГўГҐГ°ГЄГЁ Г·ГҐГІГ­Г®Г±ГІГЁ
+    USART.USART_HardwareFlowControl = USART_HardwareFlowControl_None; //ГЃГҐГ§ Г ГЇГЇГ Г°Г ГІГ­Г®ГЈГ® ГЄГ®Г­ГІГ°Г®Г«Гї
+    USART.USART_Mode = USART_Mode_Rx | USART_Mode_Tx; //Г‚ГЄГ«ГѕГ·ГҐГ­ ГЇГҐГ°ГҐГ¤Г ГІГ·ГЁГЄ ГЁ ГЇГ°ГЁГҐГ¬Г­ГЁГЄ USART
     USART_Init(USART1, &USART);
 
     USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
-    USART_Cmd(USART1, ENABLE);  //Включаем UART
+    USART_Cmd(USART1, ENABLE);  //Г‚ГЄГ«ГѕГ·Г ГҐГ¬ UART
   // defaults to 8-bit, no parity, 1 stop bit
 }
 
@@ -111,14 +111,14 @@ void serial_write(char data) {
   // Enable Data Register Empty Interrupt to make sure tx-streaming is running
     USART_ITConfig(USART1, USART_IT_TC, ENABLE);}
 
-//+++++ ПОСЫЛКА КОМАНДЫ ПО USART +++++
+//+++++ ГЏГЋГ‘Г›Г‹ГЉГЂ ГЉГЋГЊГЂГЌГ„Г› ГЏГЋ USART +++++
 void USART_COMM(char *string){
   for (char a=0; a<str; a++){
        if (string[a]==0) break;
        serial_write(string[a]);}
 }
 
-//+++++ Прерывание USART +++++
+//+++++ ГЏГ°ГҐГ°Г»ГўГ Г­ГЁГҐ USART +++++
 void USART1_IRQHandler(void) {
     if (USART_GetITStatus(USART1, USART_IT_TC)){
     USART_ClearITPendingBit(USART1, USART_IT_TC);
@@ -138,44 +138,44 @@ void initCAN(){
         GPIO_InitTypeDef GPIO_InitStructure;
 
         /* CAN GPIOs configuration */
-        RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);        // включаем тактирование AFIO
-        RCC_APB2PeriphClockCmd(CAN1_Periph, ENABLE);                // включаем тактирование порта
+        RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);        // ГўГЄГ«ГѕГ·Г ГҐГ¬ ГІГ ГЄГІГЁГ°Г®ГўГ Г­ГЁГҐ AFIO
+        RCC_APB2PeriphClockCmd(CAN1_Periph, ENABLE);                // ГўГЄГ«ГѕГ·Г ГҐГ¬ ГІГ ГЄГІГЁГ°Г®ГўГ Г­ГЁГҐ ГЇГ®Г°ГІГ 
 
-        RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN1, ENABLE);        // включаем тактирование CAN-шины
+        RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN1, ENABLE);        // ГўГЄГ«ГѕГ·Г ГҐГ¬ ГІГ ГЄГІГЁГ°Г®ГўГ Г­ГЁГҐ CAN-ГёГЁГ­Г»
 
-        // Настраиваем CAN RX pin
+        // ГЌГ Г±ГІГ°Г ГЁГўГ ГҐГ¬ CAN RX pin
         GPIO_InitStructure.GPIO_Pin   = CAN1_RX_SOURCE;
         GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
         GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
         GPIO_Init(CAN1_GPIO_PORT, &GPIO_InitStructure);
 
-        // Настраиваем CAN TX pin
+        // ГЌГ Г±ГІГ°Г ГЁГўГ ГҐГ¬ CAN TX pin
         GPIO_InitStructure.GPIO_Pin   = CAN1_TX_SOURCE;
         GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_PP;
         GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
         GPIO_Init(CAN1_GPIO_PORT, &GPIO_InitStructure);
 
 #ifdef CAN1_ReMap
-        GPIO_PinRemapConfig(GPIO_Remap1_CAN1, ENABLE);          // Переносим Can1 на PB8, PB9
+        GPIO_PinRemapConfig(GPIO_Remap1_CAN1, ENABLE);          // ГЏГҐГ°ГҐГ­Г®Г±ГЁГ¬ Can1 Г­Г  PB8, PB9
 #endif
 }
 
 void RCC_Config(void){
-// Для настройки CAN в максимальном режиме работы на скорости до 1Mb нам необходимо
-// Настроить частоту перефирии APB1 на 16 MHz
+// Г„Г«Гї Г­Г Г±ГІГ°Г®Г©ГЄГЁ CAN Гў Г¬Г ГЄГ±ГЁГ¬Г Г«ГјГ­Г®Г¬ Г°ГҐГ¦ГЁГ¬ГҐ Г°Г ГЎГ®ГІГ» Г­Г  Г±ГЄГ®Г°Г®Г±ГІГЁ Г¤Г® 1Mb Г­Г Г¬ Г­ГҐГ®ГЎГµГ®Г¤ГЁГ¬Г®
+// ГЌГ Г±ГІГ°Г®ГЁГІГј Г·Г Г±ГІГ®ГІГі ГЇГҐГ°ГҐГґГЁГ°ГЁГЁ APB1 Г­Г  16 MHz
 
       RCC_ClocksTypeDef RCC_Clocks;
       ErrorStatus HSEStartUpStatus;
 
-      // Сбросим настройки тактирования системы
+      // Г‘ГЎГ°Г®Г±ГЁГ¬ Г­Г Г±ГІГ°Г®Г©ГЄГЁ ГІГ ГЄГІГЁГ°Г®ГўГ Г­ГЁГї Г±ГЁГ±ГІГҐГ¬Г»
      RCC_DeInit();                                                // RCC system reset
 
-     // Включим внешний кварц, как источник сигнала
+     // Г‚ГЄГ«ГѕГ·ГЁГ¬ ГўГ­ГҐГёГ­ГЁГ© ГЄГўГ Г°Г¶, ГЄГ ГЄ ГЁГ±ГІГ®Г·Г­ГЁГЄ Г±ГЁГЈГ­Г Г«Г 
      RCC_HSEConfig(RCC_HSE_ON);                                   // Enable HSE
 
-     HSEStartUpStatus = RCC_WaitForHSEStartUp();                  // Подождем включения HSE
+     HSEStartUpStatus = RCC_WaitForHSEStartUp();                  // ГЏГ®Г¤Г®Г¦Г¤ГҐГ¬ ГўГЄГ«ГѕГ·ГҐГ­ГЁГї HSE
 
-     if (HSEStartUpStatus == SUCCESS){                             // Если включился кварц
+     if (HSEStartUpStatus == SUCCESS){                             // Г…Г±Г«ГЁ ГўГЄГ«ГѕГ·ГЁГ«Г±Гї ГЄГўГ Г°Г¶
 
      RCC_HCLKConfig(RCC_SYSCLK_Div1);                         // HCLK = SYSCLK     (64MHz)
      RCC_PCLK1Config(RCC_HCLK_Div4);                          // PCLK1 = HCLK / 8  (16MHz)
@@ -183,14 +183,14 @@ void RCC_Config(void){
      RCC_ADCCLKConfig(RCC_PCLK2_Div2);                        // ADC CLK
 
      RCC_PLLConfig(RCC_PLLSource_HSE_Div1, RCC_PLLMul_8);     // PLLCLK = 8MHz * 8 = 64 MHz
-     RCC_PLLCmd(ENABLE);                                      // Включаем PLL
+     RCC_PLLCmd(ENABLE);                                      // Г‚ГЄГ«ГѕГ·Г ГҐГ¬ PLL
 
-     while (RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == RESET) {}   // Ждем включения PLL
+     while (RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == RESET) {}   // Г†Г¤ГҐГ¬ ГўГЄГ«ГѕГ·ГҐГ­ГЁГї PLL
 
-     RCC_SYSCLKConfig(RCC_SYSCLKSource_PLLCLK);               // Выбираем PLL как источник
-                                                              // системного тактирования
-     while (RCC_GetSYSCLKSource() != 0x08) {}                 // Ждем, пока не установится PLL,
-                                                              // как источник системного тактирования
+     RCC_SYSCLKConfig(RCC_SYSCLKSource_PLLCLK);               // Г‚Г»ГЎГЁГ°Г ГҐГ¬ PLL ГЄГ ГЄ ГЁГ±ГІГ®Г·Г­ГЁГЄ
+                                                              // Г±ГЁГ±ГІГҐГ¬Г­Г®ГЈГ® ГІГ ГЄГІГЁГ°Г®ГўГ Г­ГЁГї
+     while (RCC_GetSYSCLKSource() != 0x08) {}                 // Г†Г¤ГҐГ¬, ГЇГ®ГЄГ  Г­ГҐ ГіГ±ГІГ Г­Г®ГўГЁГІГ±Гї PLL,
+                                                              // ГЄГ ГЄ ГЁГ±ГІГ®Г·Г­ГЁГЄ Г±ГЁГ±ГІГҐГ¬Г­Г®ГЈГ® ГІГ ГЄГІГЁГ°Г®ГўГ Г­ГЁГї
 }
 
     RCC_GetClocksFreq (&RCC_Clocks);
@@ -198,7 +198,7 @@ void RCC_Config(void){
 
 
 void CAN(uint16_t a){
-        // Инициализация шины
+        // Г€Г­ГЁГ¶ГЁГ Г«ГЁГ§Г Г¶ГЁГї ГёГЁГ­Г»
         // SamplePoint 87.5
         CAN_InitTypeDef CAN_InitStructure;
 switch(a){
@@ -327,7 +327,7 @@ void USB_LP_CAN1_RX0_IRQHandler(void){
         statLED(1);
         uint16_t stamp=TIM_GetCounter(TIM1);
 
-        if (CAN_GetITStatus(CAN1, CAN_IT_FMP0) != RESET)         // Проверим почтовый ящик
+        if (CAN_GetITStatus(CAN1, CAN_IT_FMP0) != RESET)         // ГЏГ°Г®ГўГҐГ°ГЁГ¬ ГЇГ®Г·ГІГ®ГўГ»Г© ГїГ№ГЁГЄ
     {
     CAN_Receive(CAN1, CAN_FIFO0, &RxMessage);
     if (RxMessage.RTR==CAN_RTR_Remote){
