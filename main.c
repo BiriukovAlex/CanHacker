@@ -8,29 +8,44 @@
 #define LED_PORT              GPIOC
 #define LED_PIN               GPIO_Pin_13
 
-//#define CAN1_ReMap // Р—Р°РєРѕРјРµРЅС‚РёСЂРѕРІР°С‚СЊ, РµСЃР»Рё РЅРµС‚ СЂРµРјР°РїРёРЅРіР° РїРѕСЂС‚РѕРІ
+#define CAN1_ReMap // Закоментировать, если нет ремапинга портов
 #ifndef CAN1_ReMap
     #define CAN1_GPIO_PORT        GPIOA
-    #define CAN1_RX_SOURCE        GPIO_Pin_11              // RX-РїРѕСЂС‚
-    #define CAN1_TX_SOURCE        GPIO_Pin_12              // TX-РїРѕСЂС‚
-    #define CAN1_Periph        RCC_APB2Periph_GPIOA        // РџРѕСЂС‚ РїРµСЂРёС„РёСЂРёРё
+    #define CAN1_RX_SOURCE        GPIO_Pin_11              // RX-порт
+    #define CAN1_TX_SOURCE        GPIO_Pin_12              // TX-порт
+    #define CAN1_Periph        RCC_APB2Periph_GPIOA        // Порт перифирии
 #else
     #define CAN1_GPIO_PORT        GPIOB
-    #define CAN1_RX_SOURCE        GPIO_Pin_8               // RX-РїРѕСЂС‚
-    #define CAN1_TX_SOURCE        GPIO_Pin_9               // TX-РїРѕСЂС‚
-    #define CAN1_Periph        RCC_APB2Periph_GPIOB        // РџРѕСЂС‚ РїРµСЂРёС„РёСЂРёРё
+    #define CAN1_RX_SOURCE        GPIO_Pin_8               // RX-порт
+    #define CAN1_TX_SOURCE        GPIO_Pin_9               // TX-порт
+    #define CAN1_Periph        RCC_APB2Periph_GPIOB        // Порт перифирии
 #endif
 
 //#define Mode                   CAN_Mode_Silent_LoopBack
 #define Mode                   CAN_Mode_Normal
 //#define Mode                   CAN_Mode_LoopBack
 
+#define dtread 30
+#define dtwrite 1024
+#define str 10
+char    string[str];
+char    datawrite[dtwrite];
+uint8_t dataread[dtread];
+uint16_t serial_tx_buffer_tail;
+uint16_t serial_tx_buffer_head;
+uint8_t readcount;
+uint8_t FLAG;                       //1-есть пакет пакет
+                                    //2-interface_state
+                                    //4-listen only
+                                    //8-time stamp
+uint32_t filterID;
+uint32_t filterMASK;
+
 CanTxMsg canTX;
 CanRxMsg RxMessage;
 
 void pause (uint32_t tick){
-  while (tick--){}
-}
+  while(tick--){}}
 
 void initLED(void){
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
@@ -45,80 +60,192 @@ void statLED(uint8_t a){
   if (a==1) GPIO_ResetBits(LED_PORT,LED_PIN);
   if (a==0) GPIO_SetBits(LED_PORT,LED_PIN);}
 
+void initUART(){
+    GPIO_InitTypeDef PORT;    //Структура содержащая настройки порта
+    USART_InitTypeDef USART;  //Структура содержащая настройки USART
+    NVIC_InitTypeDef NVIC_InitStructure;
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA|RCC_APB2Periph_AFIO,ENABLE);
+
+    GPIO_StructInit(&PORT);
+    PORT.GPIO_Mode = GPIO_Mode_AF_PP;
+    PORT.GPIO_Pin = GPIO_Pin_9; //  Tx
+    PORT.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &PORT);
+
+    PORT.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    PORT.GPIO_Pin = GPIO_Pin_10; //  Rx
+    PORT.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &PORT);
+
+    //Настройка USART
+    USART_StructInit(&USART);
+    USART.USART_BaudRate = 115200;   //Скорость обмена
+    USART.USART_WordLength = USART_WordLength_8b; //Длина слова 8 бит
+    USART.USART_StopBits = USART_StopBits_1; //1 стоп-бит
+    USART.USART_Parity = USART_Parity_No ; //Без проверки четности
+    USART.USART_HardwareFlowControl = USART_HardwareFlowControl_None; //Без аппаратного контроля
+    USART.USART_Mode = USART_Mode_Rx | USART_Mode_Tx; //Включен передатчик и приемник USART
+    USART_Init(USART1, &USART);
+
+    USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+    USART_Cmd(USART1, ENABLE);  //Включаем UART
+  // defaults to 8-bit, no parity, 1 stop bit
+}
+
+void serial_write(char data) {
+  // Calculate next head
+  uint16_t next_head = serial_tx_buffer_head + 1;
+  if (next_head == dtwrite) { next_head = 0; }
+  while (next_head == serial_tx_buffer_tail) {}
+  // Store data and advance head
+  datawrite[serial_tx_buffer_head] = data;
+  serial_tx_buffer_head = next_head;
+
+  // Enable Data Register Empty Interrupt to make sure tx-streaming is running
+    USART_ITConfig(USART1, USART_IT_TC, ENABLE);}
+
+//+++++ ПОСЫЛКА КОМАНДЫ ПО USART +++++
+void USART_COMM(char *string){
+  for (char a=0; a<str; a++){
+       if (string[a]==0) break;
+       serial_write(string[a]);}
+}
+
+//+++++ Прерывание USART +++++
+void USART1_IRQHandler(void) {
+    if (USART_GetITStatus(USART1, USART_IT_TC)){
+    USART_ClearITPendingBit(USART1, USART_IT_TC);
+    uint16_t tail = serial_tx_buffer_tail;
+    USART1->DR = datawrite[tail];
+    tail++;
+    if (tail == dtwrite ) {tail=0;}
+    serial_tx_buffer_tail = tail;
+    if (tail == serial_tx_buffer_head) {USART_ITConfig(USART1, USART_IT_TC, DISABLE); }}
+
+	if (USART1->SR & USART_SR_RXNE) {
+	dataread[readcount]=USART1->DR;
+	if (dataread[readcount]==0x0d) FLAG|=1;
+	if (readcount<dtread)readcount++;}}
+
 void initCAN(){
         GPIO_InitTypeDef GPIO_InitStructure;
 
         /* CAN GPIOs configuration */
-        RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);        // РІРєР»СЋС‡Р°РµРј С‚Р°РєС‚РёСЂРѕРІР°РЅРёРµ AFIO
-        RCC_APB2PeriphClockCmd(CAN1_Periph, ENABLE);                // РІРєР»СЋС‡Р°РµРј С‚Р°РєС‚РёСЂРѕРІР°РЅРёРµ РїРѕСЂС‚Р°
+        RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);        // включаем тактирование AFIO
+        RCC_APB2PeriphClockCmd(CAN1_Periph, ENABLE);                // включаем тактирование порта
 
-        RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN1, ENABLE);        // РІРєР»СЋС‡Р°РµРј С‚Р°РєС‚РёСЂРѕРІР°РЅРёРµ CAN-С€РёРЅС‹
+        RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN1, ENABLE);        // включаем тактирование CAN-шины
 
-        // РќР°СЃС‚СЂР°РёРІР°РµРј CAN RX pin
+        // Настраиваем CAN RX pin
         GPIO_InitStructure.GPIO_Pin   = CAN1_RX_SOURCE;
         GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_IPU;
         GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
         GPIO_Init(CAN1_GPIO_PORT, &GPIO_InitStructure);
 
-        // РќР°СЃС‚СЂР°РёРІР°РµРј CAN TX pin
+        // Настраиваем CAN TX pin
         GPIO_InitStructure.GPIO_Pin   = CAN1_TX_SOURCE;
         GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF_PP;
         GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
         GPIO_Init(CAN1_GPIO_PORT, &GPIO_InitStructure);
 
 #ifdef CAN1_ReMap
-        GPIO_PinRemapConfig(GPIO_Remap1_CAN1, ENABLE);          // РџРµСЂРµРЅРѕСЃРёРј Can1 РЅР° PB8, PB9
+        GPIO_PinRemapConfig(GPIO_Remap1_CAN1, ENABLE);          // Переносим Can1 на PB8, PB9
 #endif
 }
 
+void RCC_Config(void){
+// Для настройки CAN в максимальном режиме работы на скорости до 1Mb нам необходимо
+// Настроить частоту перефирии APB1 на 16 MHz
+
+      RCC_ClocksTypeDef RCC_Clocks;
+      ErrorStatus HSEStartUpStatus;
+
+      // Сбросим настройки тактирования системы
+     RCC_DeInit();                                                // RCC system reset
+
+     // Включим внешний кварц, как источник сигнала
+     RCC_HSEConfig(RCC_HSE_ON);                                   // Enable HSE
+
+     HSEStartUpStatus = RCC_WaitForHSEStartUp();                  // Подождем включения HSE
+
+     if (HSEStartUpStatus == SUCCESS){                             // Если включился кварц
+
+     RCC_HCLKConfig(RCC_SYSCLK_Div1);                         // HCLK = SYSCLK     (64MHz)
+     RCC_PCLK1Config(RCC_HCLK_Div4);                          // PCLK1 = HCLK / 8  (16MHz)
+     RCC_PCLK2Config(RCC_HCLK_Div1);                          // PCLK2 = HCLK      (64MHz)
+     RCC_ADCCLKConfig(RCC_PCLK2_Div2);                        // ADC CLK
+
+     RCC_PLLConfig(RCC_PLLSource_HSE_Div1, RCC_PLLMul_8);     // PLLCLK = 8MHz * 8 = 64 MHz
+     RCC_PLLCmd(ENABLE);                                      // Включаем PLL
+
+     while (RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == RESET) {}   // Ждем включения PLL
+
+     RCC_SYSCLKConfig(RCC_SYSCLKSource_PLLCLK);               // Выбираем PLL как источник
+                                                              // системного тактирования
+     while (RCC_GetSYSCLKSource() != 0x08) {}                 // Ждем, пока не установится PLL,
+                                                              // как источник системного тактирования
+}
+
+    RCC_GetClocksFreq (&RCC_Clocks);
+}
+
+
 void CAN(uint16_t a){
-        // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ С€РёРЅС‹
+        // Инициализация шины
+        // SamplePoint 87.5
         CAN_InitTypeDef CAN_InitStructure;
 switch(a){
         case 1000:
-        CAN_InitStructure.CAN_BS1 = CAN_BS1_8tq;
-        CAN_InitStructure.CAN_BS2 = CAN_BS2_3tq;
-        CAN_InitStructure.CAN_Prescaler = 3;
+        CAN_InitStructure.CAN_BS1 = CAN_BS1_13tq;
+        CAN_InitStructure.CAN_BS2 = CAN_BS2_2tq;
+        CAN_InitStructure.CAN_Prescaler = 1;
 		break ;
         case 800:
-        CAN_InitStructure.CAN_BS1 = CAN_BS1_10tq;
-        CAN_InitStructure.CAN_BS2 = CAN_BS2_4tq;
-        CAN_InitStructure.CAN_Prescaler = 3;
+        CAN_InitStructure.CAN_BS1 = CAN_BS1_8tq;
+        CAN_InitStructure.CAN_BS2 = CAN_BS2_1tq;
+        CAN_InitStructure.CAN_Prescaler = 2;
 		break ;
         case 500:
-        CAN_InitStructure.CAN_BS1 = CAN_BS1_8tq;
-        CAN_InitStructure.CAN_BS2 = CAN_BS2_3tq;
-        CAN_InitStructure.CAN_Prescaler = 6;
+        CAN_InitStructure.CAN_BS1 = CAN_BS1_13tq;
+        CAN_InitStructure.CAN_BS2 = CAN_BS2_2tq;
+        CAN_InitStructure.CAN_Prescaler = 2;
 		break ;
         case 250:
-        CAN_InitStructure.CAN_BS1 = CAN_BS1_11tq;
-        CAN_InitStructure.CAN_BS2 = CAN_BS2_4tq;
-        CAN_InitStructure.CAN_Prescaler = 9;
+        CAN_InitStructure.CAN_BS1 = CAN_BS1_13tq;
+        CAN_InitStructure.CAN_BS2 = CAN_BS2_2tq;
+        CAN_InitStructure.CAN_Prescaler = 4;
 		break ;
         case 125:
-        CAN_InitStructure.CAN_BS1 = CAN_BS1_11tq;
-        CAN_InitStructure.CAN_BS2 = CAN_BS2_4tq;
-        CAN_InitStructure.CAN_Prescaler = 18;
+        CAN_InitStructure.CAN_BS1 = CAN_BS1_13tq;
+        CAN_InitStructure.CAN_BS2 = CAN_BS2_2tq;
+        CAN_InitStructure.CAN_Prescaler = 8;
 		break ;
         case 100:
-        CAN_InitStructure.CAN_BS1 = CAN_BS1_8tq;
-        CAN_InitStructure.CAN_BS2 = CAN_BS2_3tq;
-        CAN_InitStructure.CAN_Prescaler = 30;
+        CAN_InitStructure.CAN_BS1 = CAN_BS1_13tq;
+        CAN_InitStructure.CAN_BS2 = CAN_BS2_2tq;
+        CAN_InitStructure.CAN_Prescaler = 10;
 		break ;
         case 50:
-        CAN_InitStructure.CAN_BS1 = CAN_BS1_11tq;
-        CAN_InitStructure.CAN_BS2 = CAN_BS2_4tq;
-        CAN_InitStructure.CAN_Prescaler = 45;
+        CAN_InitStructure.CAN_BS1 = CAN_BS1_13tq;
+        CAN_InitStructure.CAN_BS2 = CAN_BS2_2tq;
+        CAN_InitStructure.CAN_Prescaler = 20;
 		break ;
         case 20:
-        CAN_InitStructure.CAN_BS1 = CAN_BS1_8tq;
-        CAN_InitStructure.CAN_BS2 = CAN_BS2_3tq;
-        CAN_InitStructure.CAN_Prescaler = 150;
+        CAN_InitStructure.CAN_BS1 = CAN_BS1_13tq;
+        CAN_InitStructure.CAN_BS2 = CAN_BS2_2tq;
+        CAN_InitStructure.CAN_Prescaler = 50;
 		break ;
         case 10:
-        CAN_InitStructure.CAN_BS1 = CAN_BS1_11tq;
-        CAN_InitStructure.CAN_BS2 = CAN_BS2_4tq;
-        CAN_InitStructure.CAN_Prescaler = 225;
+        CAN_InitStructure.CAN_BS1 = CAN_BS1_13tq;
+        CAN_InitStructure.CAN_BS2 = CAN_BS2_2tq;
+        CAN_InitStructure.CAN_Prescaler = 100;
 		break ;
 }
         // CAN cell init
@@ -131,6 +258,19 @@ switch(a){
         CAN_InitStructure.CAN_Mode = Mode;
         CAN_InitStructure.CAN_SJW = CAN_SJW_1tq;
         CAN_Init(CAN1, &CAN_InitStructure);
+		USART_COMM("\r");
+}
+
+void TIM(uint8_t a){
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
+    TIM_TimeBaseInitTypeDef TIMER_InitStructure;
+    TIM_TimeBaseStructInit(&TIMER_InitStructure);
+    TIMER_InitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIMER_InitStructure.TIM_Prescaler = 64000;
+    TIMER_InitStructure.TIM_Period = 60000;
+    TIM_TimeBaseInit(TIM1, &TIMER_InitStructure);
+    if (a==ON) TIM_Cmd(TIM1, ENABLE);
+    if (a==OFF) TIM_Cmd(TIM1, DISABLE);
 }
 
 void initFILTER(void){
@@ -143,6 +283,21 @@ void initFILTER(void){
         CAN_FilterInitStructure.CAN_FilterIdLow = 0x0000;
         CAN_FilterInitStructure.CAN_FilterMaskIdHigh = 0x0000;
         CAN_FilterInitStructure.CAN_FilterMaskIdLow = 0x0000;
+        CAN_FilterInitStructure.CAN_FilterFIFOAssignment = CAN_FIFO0;
+        CAN_FilterInitStructure.CAN_FilterActivation = ENABLE;
+        CAN_FilterInit(&CAN_FilterInitStructure);
+}
+
+void _initFILTER(uint32_t filterMASK,uint32_t filterID){
+        // CAN filter init
+        CAN_FilterInitTypeDef CAN_FilterInitStructure;
+        CAN_FilterInitStructure.CAN_FilterNumber = 1;
+        CAN_FilterInitStructure.CAN_FilterMode = CAN_FilterMode_IdMask;
+        CAN_FilterInitStructure.CAN_FilterScale = CAN_FilterScale_32bit;
+        CAN_FilterInitStructure.CAN_FilterIdHigh = (uint16_t) filterID<<16;
+        CAN_FilterInitStructure.CAN_FilterIdLow = (uint16_t) filterID ;
+        CAN_FilterInitStructure.CAN_FilterMaskIdHigh = (uint16_t) filterMASK<<16;
+        CAN_FilterInitStructure.CAN_FilterMaskIdLow = (uint16_t) filterMASK;
         CAN_FilterInitStructure.CAN_FilterFIFOAssignment = CAN_FIFO0;
         CAN_FilterInitStructure.CAN_FilterActivation = ENABLE;
         CAN_FilterInit(&CAN_FilterInitStructure);
@@ -162,45 +317,246 @@ void initINT(void){
         NVIC_Init(&NVIC_InitStructure);
 }
 
+uint8_t halfbyte_to_hexascii(uint8_t _halfbyte){
+ _halfbyte &= 0x0F ;
+ if(_halfbyte >= 10) return('A' + _halfbyte - 10) ;
+	else               return('0' + _halfbyte) ;
+}
+
 void USB_LP_CAN1_RX0_IRQHandler(void){
-
-
-        if (CAN_GetITStatus(CAN1, CAN_IT_FMP0) != RESET){         // РџСЂРѕРІРµСЂРёРј РїРѕС‡С‚РѕРІС‹Р№ СЏС‰РёРє
-            CAN_Receive(CAN1, CAN_FIFO0, &RxMessage);
         statLED(1);
-        pause (100000);
-        statLED(0);
+        uint16_t stamp=TIM_GetCounter(TIM1);
+
+        if (CAN_GetITStatus(CAN1, CAN_IT_FMP0) != RESET)         // Проверим почтовый ящик
+    {
+    CAN_Receive(CAN1, CAN_FIFO0, &RxMessage);
+    if (RxMessage.RTR==CAN_RTR_Remote){
+      if (RxMessage.IDE==CAN_Id_Standard){
+      serial_write('r');
+      serial_write(halfbyte_to_hexascii((RxMessage.StdId)>>8));
+      serial_write(halfbyte_to_hexascii((RxMessage.StdId)>>4));
+      serial_write(halfbyte_to_hexascii(RxMessage.StdId));
+      serial_write(halfbyte_to_hexascii(RxMessage.DLC));}
+
+      if (RxMessage.IDE==CAN_Id_Extended){
+      serial_write('R');
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>28));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>24));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>20));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>16));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>12));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>8));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>4));
+      serial_write(halfbyte_to_hexascii(RxMessage.ExtId));
+      serial_write(halfbyte_to_hexascii(RxMessage.DLC));}}
+
+      if (RxMessage.RTR==CAN_RTR_DATA){
+      if (RxMessage.IDE==CAN_Id_Standard){
+      serial_write('t');
+      serial_write(halfbyte_to_hexascii((RxMessage.StdId)>>8));
+      serial_write(halfbyte_to_hexascii((RxMessage.StdId)>>4));
+      serial_write(halfbyte_to_hexascii(RxMessage.StdId));}
+
+      if (RxMessage.IDE==CAN_Id_Extended){
+      serial_write('T');
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>28));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>24));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>20));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>16));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>12));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>8));
+      serial_write(halfbyte_to_hexascii((RxMessage.ExtId)>>4));
+      serial_write(halfbyte_to_hexascii(RxMessage.ExtId));}
+
+      serial_write(halfbyte_to_hexascii(RxMessage.DLC));
+      for (uint8_t a=0; a<RxMessage.DLC; a++){
+      serial_write(halfbyte_to_hexascii(RxMessage.Data[a]>>4));
+      serial_write(halfbyte_to_hexascii(RxMessage.Data[a]));}}
+
+      if ((FLAG&8)==8){
+      serial_write(halfbyte_to_hexascii(stamp>>12));
+      serial_write(halfbyte_to_hexascii(stamp>>8));
+      serial_write(halfbyte_to_hexascii(stamp>>4));
+      serial_write(halfbyte_to_hexascii(stamp));}
+
+      serial_write(0x0d);
       }
-      }
+      statLED(0);}
 
+uint8_t hexascii_to_halfbyte(uint8_t _ascii){
+ if((_ascii >= '0') && (_ascii <= '9')) return(_ascii - '0') ;
+ if((_ascii >= 'a') && (_ascii <= 'f')) return(_ascii - 'W') ;
+ if((_ascii >= 'A') && (_ascii <= 'F')) return(_ascii - '7') ;
+ return(0xFF);
+}
 
-
-void main(void)
-{
+void main(void){
+        RCC_Config();
         initLED();
+        initUART();
         initCAN();
-        CAN (800);
         initFILTER();
         initINT();
         statLED(0);
- while(1){
 
-        canTX.StdId=0x1ff;
-        canTX.DLC=8;
-        canTX.Data[0]=1;
-        canTX.Data[1]=2;
-        canTX.Data[2]=3;
-        canTX.Data[3]=4;
-        canTX.Data[4]=5;
-        canTX.Data[5]=6;
-        canTX.Data[6]=7;
-        canTX.Data[7]=8;
+  while(1){   
+    if ((FLAG&1)==1){
+      switch(dataread[0]){
+
+		case 'V':
+		    USART_COMM("V0101\r");
+		break ;
+
+		case 'v':
+		    USART_COMM("vSTM32\r");
+		break ;
+
+        case 'L':
+        FLAG|=4;                   //Listen Only
+		USART_COMM("\r");
+		break ;
+
+        case 'O':
+        FLAG|=2;                   //interface_state = 1
+        FLAG&=~4;
+		USART_COMM("\r");
+		break ;
+
+		case 'C':
+		FLAG&=~2;                 //interface_state	= 0
+		USART_COMM("\r");
+		break ;
+
+        case 'Z':
+		switch(dataread[1]){
+		case	'1':							//Stamp ON
+		FLAG|=8;
+                TIM(ON);
+                USART_COMM("\r");
+		break ;
+
+		case	'0':							//Stamp OFF
+		FLAG&=~8;
+                TIM(OFF);
+                USART_COMM("\r");
+		break ;
+
+                default :
+		FLAG&=~8;
+                USART_COMM("\r");
+		break ;
+		}
+        break;
+
+        case 'S':
+				switch(dataread[1]){
+						case	'0':							//CAN = 10Kbls
+							CAN(10);
+						break ;
+
+						case	'1':							//CAN = 20Kbls
+							CAN(20);
+						break ;
+
+						case	'2':							//CAN = 50Kbls
+							CAN(50);
+						break ;
+
+						case	'3':							//CAN = 100Kbls
+							CAN(100);
+						break ;
+
+						case	'4':							//CAN = 125Kbls
+							CAN(125);
+						break ;
+
+						case	'5':							//CAN = 250Kbls
+							CAN(250);
+						break ;
+
+						case	'6':							//CAN = 500Kbls
+							CAN(500);
+						break ;
+
+						case	'7':							//CAN = 800Kbls
+							CAN(800);
+						break ;
+
+						case	'8':							//CAN = 1000Kbls
+							CAN(1000);
+						break ;
+						default :
+							CAN(500);
+						break ;}
+        break;
+
+        case 't':
+        canTX.StdId=hexascii_to_halfbyte(dataread[1])<<8|hexascii_to_halfbyte(dataread[2])<<4|hexascii_to_halfbyte(dataread[3]);
+        canTX.DLC=hexascii_to_halfbyte(dataread[4]);
+        canTX.Data[0]=hexascii_to_halfbyte(dataread[5])<<4|hexascii_to_halfbyte(dataread[6]);
+        canTX.Data[1]=hexascii_to_halfbyte(dataread[7])<<4|hexascii_to_halfbyte(dataread[8]);
+        canTX.Data[2]=hexascii_to_halfbyte(dataread[9])<<4|hexascii_to_halfbyte(dataread[10]);
+        canTX.Data[3]=hexascii_to_halfbyte(dataread[11])<<4|hexascii_to_halfbyte(dataread[12]);
+        canTX.Data[4]=hexascii_to_halfbyte(dataread[13])<<4|hexascii_to_halfbyte(dataread[14]);
+        canTX.Data[5]=hexascii_to_halfbyte(dataread[15])<<4|hexascii_to_halfbyte(dataread[16]);
+        canTX.Data[6]=hexascii_to_halfbyte(dataread[17])<<4|hexascii_to_halfbyte(dataread[18]);
+        canTX.Data[7]=hexascii_to_halfbyte(dataread[19])<<4|hexascii_to_halfbyte(dataread[20]);
         canTX.IDE = CAN_Id_Standard;
         canTX.RTR = CAN_RTR_DATA;
         CAN_Transmit(CAN1, &canTX);
-        pause (50000);
+		USART_COMM("\r");
+        break;
 
-}
-}
+        case 'r':
+        canTX.StdId=hexascii_to_halfbyte(dataread[1])<<8|hexascii_to_halfbyte(dataread[2])<<4|hexascii_to_halfbyte(dataread[3]);
+        canTX.DLC=hexascii_to_halfbyte(dataread[4]);
+        canTX.IDE = CAN_Id_Standard;
+        canTX.RTR = CAN_RTR_Remote;
+        CAN_Transmit(CAN1, &canTX);
+		USART_COMM("\r");
+        break;
 
+        case 'R':
+        canTX.ExtId=hexascii_to_halfbyte(dataread[1])<<28|hexascii_to_halfbyte(dataread[2])<<24|hexascii_to_halfbyte(dataread[3])<<20|hexascii_to_halfbyte(dataread[4])<<16|hexascii_to_halfbyte(dataread[5])<<12|hexascii_to_halfbyte(dataread[6])<<8|hexascii_to_halfbyte(dataread[7])<<4|hexascii_to_halfbyte(dataread[8]);
+        canTX.DLC=hexascii_to_halfbyte(dataread[9]);
+        canTX.IDE = CAN_Id_Extended;
+        canTX.RTR = CAN_RTR_Remote;
+        CAN_Transmit(CAN1, &canTX);
+		USART_COMM("\r");
+        break;
 
+        case 'T':
+        canTX.ExtId=hexascii_to_halfbyte(dataread[1])<<28|hexascii_to_halfbyte(dataread[2])<<24|hexascii_to_halfbyte(dataread[3])<<20|hexascii_to_halfbyte(dataread[4])<<16|hexascii_to_halfbyte(dataread[5])<<12|hexascii_to_halfbyte(dataread[6])<<8|hexascii_to_halfbyte(dataread[7])<<4|hexascii_to_halfbyte(dataread[8]);
+        canTX.DLC=hexascii_to_halfbyte(dataread[9]);
+        canTX.Data[0]=hexascii_to_halfbyte(dataread[10])<<4|hexascii_to_halfbyte(dataread[11]);
+        canTX.Data[1]=hexascii_to_halfbyte(dataread[12])<<4|hexascii_to_halfbyte(dataread[13]);
+        canTX.Data[2]=hexascii_to_halfbyte(dataread[14])<<4|hexascii_to_halfbyte(dataread[15]);
+        canTX.Data[3]=hexascii_to_halfbyte(dataread[16])<<4|hexascii_to_halfbyte(dataread[17]);
+        canTX.Data[4]=hexascii_to_halfbyte(dataread[18])<<4|hexascii_to_halfbyte(dataread[19]);
+        canTX.Data[5]=hexascii_to_halfbyte(dataread[20])<<4|hexascii_to_halfbyte(dataread[21]);
+        canTX.Data[6]=hexascii_to_halfbyte(dataread[22])<<4|hexascii_to_halfbyte(dataread[23]);
+        canTX.Data[7]=hexascii_to_halfbyte(dataread[24])<<4|hexascii_to_halfbyte(dataread[25]);
+        canTX.IDE = CAN_Id_Extended;
+        canTX.RTR = CAN_RTR_DATA;
+        CAN_Transmit(CAN1, &canTX);
+		USART_COMM("\r");
+        break;
+
+        case 'm':
+        filterMASK=hexascii_to_halfbyte(dataread[1])<<28|hexascii_to_halfbyte(dataread[2])<<24|hexascii_to_halfbyte(dataread[3])<<20|hexascii_to_halfbyte(dataread[4])<<16|hexascii_to_halfbyte(dataread[5])<<12|hexascii_to_halfbyte(dataread[6])<<8|hexascii_to_halfbyte(dataread[7])<<4|hexascii_to_halfbyte(dataread[8]);
+        if (filterMASK==0xffffffff) initFILTER();
+		USART_COMM("\r");
+        break;
+
+        case 'M':
+        filterID=hexascii_to_halfbyte(dataread[1])<<28|hexascii_to_halfbyte(dataread[2])<<24|hexascii_to_halfbyte(dataread[3])<<20|hexascii_to_halfbyte(dataread[4])<<16|hexascii_to_halfbyte(dataread[5])<<12|hexascii_to_halfbyte(dataread[6])<<8|hexascii_to_halfbyte(dataread[7])<<4|hexascii_to_halfbyte(dataread[8]);
+		USART_COMM("\r");
+        _initFILTER(filterMASK,filterID);
+        break;
+
+        default :
+		USART_COMM("\r");
+		break ;}
+      readcount=0;
+      FLAG&=~1;}
+    }}
